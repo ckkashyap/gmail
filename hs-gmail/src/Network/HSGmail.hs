@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.HSGmail (dingo,bingo, getConnection) where
+module Network.HSGmail (dingo,bingo, getConnection, sendCommand) where
 import qualified Data.ByteString as B
 import qualified Network.Connection as NC
 import Network (withSocketsDo)
@@ -17,6 +17,8 @@ import qualified System.IO.Error as E
 
 import Data.Char
 
+import Network.IMAP.Types
+
 --type Connection = Types.Connection
 
 
@@ -27,6 +29,13 @@ dingo = putStrLn "hello from HSGmail"
 bingo :: Int -> Int -> Int
 bingo x y = 1234
 
+
+sendCommand :: NC.Connection -> IO ByteString
+sendCommand c = do
+            NC.connectionPut c "C01 CAPABILITY\n"
+            x <- getResponse c
+            putStrLn (show x)
+            return x
 
 {-
 sendCommand' :: IMAPConnection -> String -> IO (ByteString, Int)
