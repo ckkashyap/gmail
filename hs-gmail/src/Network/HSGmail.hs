@@ -17,8 +17,6 @@ import qualified System.IO.Error as E
 
 import Data.Char (chr, isDigit, isSpace)
 
-import Network.IMAP.Types
-
 dingo :: IO ()
 dingo = putStrLn "hello from HSGmail"
 
@@ -29,7 +27,8 @@ bingo x y = 1234
 
 sendCommandAndGetResponse :: NC.Connection -> ByteString -> IO ByteString
 sendCommandAndGetResponse c bs = do
-            NC.connectionPut c bs
+            putStrLn (show bs)
+            NC.connectionPut c (BS.concat [bs,"\r\n"])
             resp <- getResponse c
             return resp
 
@@ -43,7 +42,17 @@ getAuthString user accessToken = encode $ BS.concat [ "user=", user, controlA, "
 
 
 
-dummy = getAuthString "someuser@example.com" "vF9dft4qmTc2Nvb3RlckBhdHRhdmlzdGEuY29tCg=="
+dummy u at = do
+      let accessToken = BS.pack at
+          user = BS.pack u
+          authString = getAuthString user accessToken
+      
+      c <- getConnection
+      sendCommandAndGetResponse c "C01 CAPABILITY"
+      authenticate c (BS.concat [ "A01 AUTHENTICATE XOAUTH2 ", authString ]) 
+
+        
+
 
 controlA :: ByteString
 controlA = BS.pack [(chr 1)]
