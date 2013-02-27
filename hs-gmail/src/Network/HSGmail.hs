@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.HSGmail (dummy, doit, getResponse) where
+module Network.HSGmail (dummy, download) where
 import qualified Data.ByteString as B
 import qualified Network.Connection as NC
 import qualified Network as N
@@ -44,7 +44,13 @@ doit c = do
      sendCommandAndGetResponse c (BS.pack str)
 
 
-dummy = dummy1 "kashyapnrishi@gmail.com" "ya29.AHES6ZQob9GtRrwBxLSPjulNyXNNH1ozXpPsLI6tcXXqtHeo"
+dummy = dummy1 "kashyapnrishi@gmail.com" "ya29.AHES6ZQ9yFCqFbOmwKVSSww7u0uf4AIKT9YPGdhbNaylLp_M"
+
+
+download :: String -> String -> IO ()
+download u a = do
+         dummy1 u a
+         return ()
 
 dummy1 u at = do
       let accessToken = BS.pack at

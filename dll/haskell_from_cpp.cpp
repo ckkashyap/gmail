@@ -10,6 +10,7 @@ using namespace std;
 void (__stdcall *HsStart)();
 void (*HsEnd)();
 int (__stdcall *adder)(int, int);
+int (__stdcall *test)(char *, char *);
 
 
 int main()
@@ -41,11 +42,18 @@ int main()
 		printf("Error getting the function handle adder\n");
 		exit(0);
 	}
+	test = (int (_stdcall *)(char *, char *))GetProcAddress(hDLL, "test@8");
+
+	if(test == NULL) {
+		printf("Error getting the function handle test\n");
+		exit(0);
+	}
 
 	HsStart();
 
     // can now safely call functions from the DLL
-    printf("12 + 5 =%i\n", adder(12,5))    ;
+	//    printf("12 + 5 =%i\n", adder(12,5))    ;
+	test("kashyapnrishi@gmail.com", "ya29.AHES6ZQgfIKGfgLSuZnB4huvDl-38SFnfKSN89-wpYQL53t2");
     return 0;
 
 }
