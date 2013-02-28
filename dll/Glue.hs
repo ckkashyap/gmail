@@ -27,11 +27,16 @@ fetch = generic2argFunc G.fetch
 search = generic2argFunc G.search
 selectMailBox  = generic2argFunc G.selectMailBox
 
+setup :: CString -> IO Int
+setup cstr = do
+      G.setup ""
+      return 123
 
 
 foreign export stdcall authenticate :: CString -> CString -> CString -> IO Int
 foreign export stdcall selectMailBox :: CString -> CString -> IO Int
 foreign export stdcall fetch :: CString -> CString -> IO Int
 foreign export stdcall search :: CString -> CString -> IO Int
+foreign export stdcall setup :: CString -> IO Int
 
 

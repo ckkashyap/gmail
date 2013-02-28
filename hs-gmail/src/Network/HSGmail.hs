@@ -123,6 +123,11 @@ data Command =  Authenticate String String String
 
 
 
+setup str = do
+      CC.forkIO main
+      CC.threadDelay 2000000
+
+
 main = do
      con <- getConnection
      socket <- N.listenOn thePort
@@ -136,6 +141,7 @@ serve socket con num = do
             let command = parseCommand line
             putStrLn (show command)
             processCommand con num command
+            SI.hPutStrLn handle "DONE"
             SI.hClose handle
             serve socket con ((\n->if (n+1) > 10000 then 0 else (n+1)) num)
             
@@ -181,6 +187,8 @@ pumpCommand command = N.withSocketsDo $ do
               SI.hSetBuffering handle SI.LineBuffering
               putStrLn (show command)
               SI.hPutStrLn handle (show command)
+              line <- SI.hGetLine handle
+              putStrLn $ "Server returned " ++ line
               return ()
             
 fetch outFile mailId = do
