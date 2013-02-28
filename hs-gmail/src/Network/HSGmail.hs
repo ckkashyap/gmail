@@ -20,59 +20,35 @@ import qualified System.IO.Error as E
 
 import Data.Char (chr, isDigit, isSpace)
 
-type GmailConnection = (NC.Connection, SI.Handle)
+data GmailConnection = GmailConnection (NC.Connection, SI.Handle) | NoGmailConnection
+
+
+-------------------------------------
+------------SERVER-------------------
+-------------------------------------
 
 sendCommandAndGetResponse :: GmailConnection -> ByteString -> IO ByteString
-sendCommandAndGetResponse (c,h) bs = do
+sendCommandAndGetResponse con@(GmailConnection (c,h)) bs = do
             putStrLn ("REQUEST: " ++ (show bs))
             NC.connectionPut c (BS.concat [bs,"\r\n"])
-            resp <- getResponse (c,h)
+            resp <- getResponse con
             putStr "RESPONSE: "
             BS.putStrLn (BS.take 1024 resp)
             return resp
 
 authenticate :: GmailConnection -> ByteString -> IO ByteString
-authenticate (c,h) authString = do
-             r <- sendCommandAndGetResponse (c,h) authString
+authenticate con authString = do
+             r <- sendCommandAndGetResponse con authString
              return r
 
 getAuthString :: ByteString -> ByteString -> ByteString
 getAuthString user accessToken = encode $ BS.concat [ "user=", user, controlA, "auth=Bearer ", accessToken, controlA, controlA ]
 
-doit c = do
-     putStr "Enter command: "
-     str <- getLine
-     sendCommandAndGetResponse c (BS.pack str)
-
-
-dummy = dummy1 "kashyapnrishi@gmail.com" "ya29.AHES6ZQ9yFCqFbOmwKVSSww7u0uf4AIKT9YPGdhbNaylLp_M" 0
-
-
-download :: String -> String -> Int -> IO ()
-download u a n = do
-         dummy1 u a n
-         return ()
-
-dummy1 u at n = do
-      let accessToken = BS.pack at
-          user = BS.pack u
-          authString = getAuthString user accessToken
-      
-      (c,h) <- getConnection
-      sendCommandAndGetResponse (c,h) "C01 CAPABILITY"
-      authenticate (c,h) (BS.concat [ "A01 AUTHENTICATE XOAUTH2 ", authString ])
-      sendCommandAndGetResponse (c,h) "S01 SELECT INBOX"
-      l <- sendCommandAndGetResponse (c,h) (BS.pack ("FETCH01 FETCH " ++ (show n) ++  " RFC822"))
-      BS.writeFile "out.txt" l
-      return (c,h)
-
-        
 controlA :: ByteString
 controlA = BS.pack [(chr 1)]
 
-
 getResponse :: GmailConnection -> IO ByteString
-getResponse (c,h) = unlinesCRLF <$> getLS where 
+getResponse (GmailConnection (c,h)) = unlinesCRLF <$> getLS where 
             unlinesCRLF = BS.concat . concatMap (:[crlfStr])
 
             getLS = do 
@@ -134,53 +110,9 @@ getConnection = N.withSocketsDo $ do
                               , NC.connectionUseSecure = Just def
                               , NC.connectionUseSocks  = Nothing
                               }
-    return (con, handle)
-
-getConnection' = N.withSocketsDo $ do
-    ctx <- NC.initConnectionContext
-    con <- NC.connectTo ctx $ NC.ConnectionParams
-                              { NC.connectionHostname  = "imap.gmail.com"
-                              , NC.connectionPort      = 993
-                              , NC.connectionUseSecure = Just def
-                              , NC.connectionUseSocks  = Nothing
-                              }
-    return con
-
-
------------------------------------------------------
--- START
------------------------------------------------------
+    return $ GmailConnection (con, handle)
 
 thePort = N.PortNumber 8888
-
-initializeConnection :: String -> String -> IO ()
-initializeConnection us at = do
-           mm <- CC.newEmptyMVar
-           putStrLn "Initialize connection in haskell called"
-           CC.forkIO $ do
-                  putStrLn "Inside the forked task"
-                  SI.hFlush SI.stdout
-                  let accessToken = BS.pack at
-                      user = BS.pack us
-                      authString = getAuthString user accessToken
-                  
-                  (gmailCon , gmailHnd) <- getConnection
-                  sendCommandAndGetResponse (gmailCon, gmailHnd) "C01 CAPABILITY"
-                  authenticate (gmailCon, gmailHnd) (BS.concat [ "A01 AUTHENTICATE XOAUTH2 ", authString ])
-
-                  socket <- N.listenOn thePort
-                  CC.putMVar mm "HELLO"
-                  startServer socket (gmailCon ,gmailHnd) 0                  
-                  
-
-           putStrLn "Waiting for the server to start"
-           hello <- CC.takeMVar mm
-           putStrLn "Server must have started"
-           
-           return ()
-
-
-
 
 data Command = Select String String
               | Search String String
@@ -189,11 +121,22 @@ data Command = Select String String
               deriving (Show,Read)
 
 
-parseCommand :: String -> Command
-parseCommand str = let c = reads str :: [(Command, String)]
-                   in case c of
-                           [] -> Bad
-                           ((cmd,_):_) -> cmd
+
+main = do
+     socket <- N.listenOn thePort
+--     startServer socket (gmailCon ,gmailHnd) 0                  
+     echo socket 0
+
+echo socket num = do
+            putStrLn ("Awating command " ++ (show num))
+            SI.hFlush SI.stdout
+            (handle, _, _) <- N.accept socket
+            SI.hSetBuffering handle SI.LineBuffering
+            line <- SI.hGetLine handle
+            putStrLn line
+            SI.hPutStrLn handle line
+            SI.hClose handle
+            echo socket ((\n->if (n+1) > 10000 then 0 else (n+1)) num)
 
 startServer socket (gmailCon, gmailHnd) num = do
             putStrLn "Awating command"
@@ -202,10 +145,73 @@ startServer socket (gmailCon, gmailHnd) num = do
             line <- SI.hGetLine handle
             let command = parseCommand line
             putStrLn (show command)
-            processCommand (gmailCon, gmailHnd) num command
+            --processCommand (gmailCon, gmailHnd) num command
             SI.hClose handle
             startServer socket (gmailCon, gmailHnd) ((\n->if (n+1) > 10000 then 0 else (n+1)) num)
             
+
+parseCommand :: String -> Command
+parseCommand str = let c = reads str :: [(Command, String)]
+                   in case c of
+                           [] -> Bad
+                           ((cmd,_):_) -> cmd
+
+
+
+-----------------------------------------------------
+-- START
+-----------------------------------------------------
+
+{-
+
+initializeConnection :: String -> String -> IO ()
+initializeConnection us at = do
+--           mm <- CC.newEmptyMVar
+           putStrLn "Initialize connection in haskell called"
+           CC.forkIO $ do
+                  putStrLn "Inside the forked task"
+                  SI.hFlush SI.stdout
+                  {-let accessToken = BS.pack at
+                      user = BS.pack us
+                      authString = getAuthString user accessToken
+                  
+                  (gmailCon , gmailHnd) <- getConnection
+                  sendCommandAndGetResponse (gmailCon, gmailHnd) "C01 CAPABILITY"
+                  authenticate (gmailCon, gmailHnd) (BS.concat [ "A01 AUTHENTICATE XOAUTH2 ", authString ])-}
+
+                  socket <- N.listenOn thePort
+--                  CC.putMVar mm "HELLO"
+--                  startServer socket (gmailCon ,gmailHnd) 0                  
+                  echo socket 0
+                  
+
+           CC.forkIO dingo
+           putStrLn "Waiting for the server to start"
+--           hello <- CC.takeMVar mm
+           putStrLn "Server must have started"
+           
+           return ()
+
+
+
+dingo = do
+      putStrLn "BEEP"
+      CC.threadDelay 1000000
+      putStrLn "OYE"
+      dingo
+      
+
+
+
+
+parseCommand :: String -> Command
+parseCommand str = let c = reads str :: [(Command, String)]
+                   in case c of
+                           [] -> Bad
+                           ((cmd,_):_) -> cmd
+
+
+
 processCommand (gmailCon, gmailHnd) num (Select outFile str)  = do
       res<-sendCommandAndGetResponse (gmailCon, gmailHnd) (BS.pack ("SL" ++ (show num) ++ " SELECT "++ str))
       BS.writeFile outFile res
@@ -235,3 +241,4 @@ selectMailBox outFile folder = do
 
               
             
+-}
