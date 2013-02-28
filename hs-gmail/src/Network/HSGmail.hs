@@ -36,8 +36,8 @@ sendCommandAndGetResponse con@(GmailConnection (c,h)) bs = do
             BS.putStrLn (BS.take 1024 resp)
             return resp
 
-authenticate :: GmailConnection -> ByteString -> IO ByteString
-authenticate con authString = do
+authenticateServer :: GmailConnection -> ByteString -> IO ByteString
+authenticateServer con authString = do
              r <- sendCommandAndGetResponse con authString
              return r
 
@@ -151,7 +151,7 @@ processCommand con num (Authenticate outFile us at)  = do
           user = BS.pack us
           authString = getAuthString user accessToken
       sendCommandAndGetResponse con "C01 CAPABILITY"
-      res <- authenticate con (BS.concat [ "A01 AUTHENTICATE XOAUTH2 ", authString ])
+      res <- authenticateServer con (BS.concat [ "A01 AUTHENTICATE XOAUTH2 ", authString ])
       BS.writeFile outFile res
 
 processCommand con num (Select outFile str)  = do
@@ -171,63 +171,9 @@ processCommand _ _ Bad  = do
                putStrLn "BAD command"
                return ()
 
-
-
-
------------------------------------------------------
--- START
------------------------------------------------------
-
-{-
-
-initializeConnection :: String -> String -> IO ()
-initializeConnection us at = do
---           mm <- CC.newEmptyMVar
-           putStrLn "Initialize connection in haskell called"
-           CC.forkIO $ do
-                  putStrLn "Inside the forked task"
-                  SI.hFlush SI.stdout
-                  {-let accessToken = BS.pack at
-                      user = BS.pack us
-                      authString = getAuthString user accessToken
-                  
-                  (gmailCon , gmailHnd) <- getConnection
-                  sendCommandAndGetResponse (gmailCon, gmailHnd) "C01 CAPABILITY"
-                  authenticate (gmailCon, gmailHnd) (BS.concat [ "A01 AUTHENTICATE XOAUTH2 ", authString ])-}
-
-                  socket <- N.listenOn thePort
---                  CC.putMVar mm "HELLO"
---                  startServer socket (gmailCon ,gmailHnd) 0                  
-                  echo socket 0
-                  
-
-           CC.forkIO dingo
-           putStrLn "Waiting for the server to start"
---           hello <- CC.takeMVar mm
-           putStrLn "Server must have started"
-           
-           return ()
-
-
-
-dingo = do
-      putStrLn "BEEP"
-      CC.threadDelay 1000000
-      putStrLn "OYE"
-      dingo
-      
-
-
-
-
-parseCommand :: String -> Command
-parseCommand str = let c = reads str :: [(Command, String)]
-                   in case c of
-                           [] -> Bad
-                           ((cmd,_):_) -> cmd
-
-
-
+-------------------------------------
+------------CLIENT-------------------
+-------------------------------------
 
 pumpCommand :: Command -> IO ()
 pumpCommand command = N.withSocketsDo $ do 
@@ -235,10 +181,19 @@ pumpCommand command = N.withSocketsDo $ do
               SI.hPutStrLn handle (show command)
               return ()
             
+fetch outFile mailId = do
+      let command = Fetch outFile mailId
+      pumpCommand command
+
+authenticate outFile user token = do
+             let command = Authenticate outFile user token
+             pumpCommand command
+
+search outFile query = do
+       let command = Search outFile query
+       pumpCommand command
+
 selectMailBox outFile folder = do
               let command = Select outFile folder
               pumpCommand command
 
-              
-            
--}
