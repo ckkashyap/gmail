@@ -1,9 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.HSGmail (dummy, download) where
+module Network.HSGmail where
 import qualified Data.ByteString as B
 import qualified Network.Connection as NC
 import qualified Network as N
 import qualified System.IO as SI
+import qualified Control.Concurrent as CC
 
 import Data.Default
 
@@ -44,15 +45,15 @@ doit c = do
      sendCommandAndGetResponse c (BS.pack str)
 
 
-dummy = dummy1 "kashyapnrishi@gmail.com" "ya29.AHES6ZQ9yFCqFbOmwKVSSww7u0uf4AIKT9YPGdhbNaylLp_M"
+dummy = dummy1 "kashyapnrishi@gmail.com" "ya29.AHES6ZQ9yFCqFbOmwKVSSww7u0uf4AIKT9YPGdhbNaylLp_M" 0
 
 
-download :: String -> String -> IO ()
-download u a = do
-         dummy1 u a
+download :: String -> String -> Int -> IO ()
+download u a n = do
+         dummy1 u a n
          return ()
 
-dummy1 u at = do
+dummy1 u at n = do
       let accessToken = BS.pack at
           user = BS.pack u
           authString = getAuthString user accessToken
@@ -61,7 +62,7 @@ dummy1 u at = do
       sendCommandAndGetResponse (c,h) "C01 CAPABILITY"
       authenticate (c,h) (BS.concat [ "A01 AUTHENTICATE XOAUTH2 ", authString ])
       sendCommandAndGetResponse (c,h) "S01 SELECT INBOX"
-      l <- sendCommandAndGetResponse (c,h) "FETCH01 FETCH 9 RFC822"
+      l <- sendCommandAndGetResponse (c,h) (BS.pack ("FETCH01 FETCH " ++ (show n) ++  " RFC822"))
       BS.writeFile "out.txt" l
       return (c,h)
 
@@ -144,3 +145,93 @@ getConnection' = N.withSocketsDo $ do
                               , NC.connectionUseSocks  = Nothing
                               }
     return con
+
+
+-----------------------------------------------------
+-- START
+-----------------------------------------------------
+
+thePort = N.PortNumber 8888
+
+initializeConnection :: String -> String -> IO ()
+initializeConnection us at = do
+           mm <- CC.newEmptyMVar
+           putStrLn "Initialize connection in haskell called"
+           CC.forkIO $ do
+                  putStrLn "Inside the forked task"
+                  SI.hFlush SI.stdout
+                  let accessToken = BS.pack at
+                      user = BS.pack us
+                      authString = getAuthString user accessToken
+                  
+                  (gmailCon , gmailHnd) <- getConnection
+                  sendCommandAndGetResponse (gmailCon, gmailHnd) "C01 CAPABILITY"
+                  authenticate (gmailCon, gmailHnd) (BS.concat [ "A01 AUTHENTICATE XOAUTH2 ", authString ])
+
+                  socket <- N.listenOn thePort
+                  CC.putMVar mm "HELLO"
+                  startServer socket (gmailCon ,gmailHnd) 0                  
+                  
+
+           putStrLn "Waiting for the server to start"
+           hello <- CC.takeMVar mm
+           putStrLn "Server must have started"
+           
+           return ()
+
+
+
+
+data Command = Select String String
+              | Search String String
+              | Fetch String String
+              | Bad
+              deriving (Show,Read)
+
+
+parseCommand :: String -> Command
+parseCommand str = let c = reads str :: [(Command, String)]
+                   in case c of
+                           [] -> Bad
+                           ((cmd,_):_) -> cmd
+
+startServer socket (gmailCon, gmailHnd) num = do
+            putStrLn "Awating command"
+            (handle, _, _) <- N.accept socket
+            SI.hSetBuffering handle SI.LineBuffering
+            line <- SI.hGetLine handle
+            let command = parseCommand line
+            putStrLn (show command)
+            processCommand (gmailCon, gmailHnd) num command
+            SI.hClose handle
+            startServer socket (gmailCon, gmailHnd) ((\n->if (n+1) > 10000 then 0 else (n+1)) num)
+            
+processCommand (gmailCon, gmailHnd) num (Select outFile str)  = do
+      res<-sendCommandAndGetResponse (gmailCon, gmailHnd) (BS.pack ("SL" ++ (show num) ++ " SELECT "++ str))
+      BS.writeFile outFile res
+
+processCommand (gmailCon, gmailHnd) num (Search outFile str)  = do
+      res<-sendCommandAndGetResponse (gmailCon, gmailHnd) (BS.pack ("SR" ++ (show num) ++ " SEARCH "++ str))
+      BS.writeFile outFile res
+
+processCommand (gmailCon, gmailHnd) num (Fetch outFile str)  = do
+      res<-sendCommandAndGetResponse (gmailCon, gmailHnd) (BS.pack ("FE" ++ (show num) ++ " FETCH "++ str))
+      BS.writeFile outFile res
+
+
+processCommand _ _ Bad  = do
+               putStrLn "BAD command"
+               return ()
+
+pumpCommand :: Command -> IO ()
+pumpCommand command = N.withSocketsDo $ do 
+              handle <- N.connectTo "localhost" thePort
+              SI.hPutStrLn handle (show command)
+              return ()
+            
+selectMailBox outFile folder = do
+              let command = Select outFile folder
+              pumpCommand command
+
+              
+            
