@@ -6,6 +6,7 @@ import Foreign.C.String
 
 authenticate :: CString -> CString -> CString -> IO Int
 authenticate o u a = do
+     putStrLn "Authenticate Called"
      user <- peekCString u
      accessToken <- peekCString a
      outFile <- peekCString o

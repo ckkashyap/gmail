@@ -178,6 +178,8 @@ processCommand _ _ Bad  = do
 pumpCommand :: Command -> IO ()
 pumpCommand command = N.withSocketsDo $ do 
               handle <- N.connectTo "localhost" thePort
+              SI.hSetBuffering handle SI.LineBuffering
+              putStrLn (show command)
               SI.hPutStrLn handle (show command)
               return ()
             

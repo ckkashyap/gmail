@@ -21,3 +21,4 @@ library
   -- other-modules:       
   build-depends:       base ==4.5.*, data-default, network ==2.3.1.0, connection ==0.1.2, bytestring ==0.9.2.1,
                        base64-bytestring ==1.0.0.1
+
