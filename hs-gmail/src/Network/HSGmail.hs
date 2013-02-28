@@ -114,7 +114,8 @@ getConnection = N.withSocketsDo $ do
 
 thePort = N.PortNumber 8888
 
-data Command = Select String String
+data Command =  Authenticate String String String
+              | Select String String
               | Search String String
               | Fetch String String
               | Bad
@@ -123,31 +124,20 @@ data Command = Select String String
 
 
 main = do
+     con <- getConnection
      socket <- N.listenOn thePort
---     startServer socket (gmailCon ,gmailHnd) 0                  
-     echo socket 0
+     serve socket con 1                  
 
-echo socket num = do
-            putStrLn ("Awating command " ++ (show num))
-            SI.hFlush SI.stdout
-            (handle, _, _) <- N.accept socket
-            SI.hSetBuffering handle SI.LineBuffering
-            line <- SI.hGetLine handle
-            putStrLn line
-            SI.hPutStrLn handle line
-            SI.hClose handle
-            echo socket ((\n->if (n+1) > 10000 then 0 else (n+1)) num)
-
-startServer socket (gmailCon, gmailHnd) num = do
+serve socket con num = do
             putStrLn "Awating command"
             (handle, _, _) <- N.accept socket
             SI.hSetBuffering handle SI.LineBuffering
             line <- SI.hGetLine handle
             let command = parseCommand line
             putStrLn (show command)
-            --processCommand (gmailCon, gmailHnd) num command
+            processCommand con num command
             SI.hClose handle
-            startServer socket (gmailCon, gmailHnd) ((\n->if (n+1) > 10000 then 0 else (n+1)) num)
+            serve socket con ((\n->if (n+1) > 10000 then 0 else (n+1)) num)
             
 
 parseCommand :: String -> Command
@@ -155,6 +145,32 @@ parseCommand str = let c = reads str :: [(Command, String)]
                    in case c of
                            [] -> Bad
                            ((cmd,_):_) -> cmd
+
+processCommand con num (Authenticate outFile us at)  = do
+      let accessToken = BS.pack at
+          user = BS.pack us
+          authString = getAuthString user accessToken
+      sendCommandAndGetResponse con "C01 CAPABILITY"
+      res <- authenticate con (BS.concat [ "A01 AUTHENTICATE XOAUTH2 ", authString ])
+      BS.writeFile outFile res
+
+processCommand con num (Select outFile str)  = do
+      res<-sendCommandAndGetResponse con (BS.pack ("SL" ++ (show num) ++ " SELECT "++ str))
+      BS.writeFile outFile res
+
+processCommand con num (Search outFile str)  = do
+      res<-sendCommandAndGetResponse con (BS.pack ("SR" ++ (show num) ++ " SEARCH "++ str))
+      BS.writeFile outFile res
+
+processCommand con num (Fetch outFile str)  = do
+      res<-sendCommandAndGetResponse con (BS.pack ("FE" ++ (show num) ++ " FETCH "++ str))
+      BS.writeFile outFile res
+
+
+processCommand _ _ Bad  = do
+               putStrLn "BAD command"
+               return ()
+
 
 
 
@@ -212,22 +228,6 @@ parseCommand str = let c = reads str :: [(Command, String)]
 
 
 
-processCommand (gmailCon, gmailHnd) num (Select outFile str)  = do
-      res<-sendCommandAndGetResponse (gmailCon, gmailHnd) (BS.pack ("SL" ++ (show num) ++ " SELECT "++ str))
-      BS.writeFile outFile res
-
-processCommand (gmailCon, gmailHnd) num (Search outFile str)  = do
-      res<-sendCommandAndGetResponse (gmailCon, gmailHnd) (BS.pack ("SR" ++ (show num) ++ " SEARCH "++ str))
-      BS.writeFile outFile res
-
-processCommand (gmailCon, gmailHnd) num (Fetch outFile str)  = do
-      res<-sendCommandAndGetResponse (gmailCon, gmailHnd) (BS.pack ("FE" ++ (show num) ++ " FETCH "++ str))
-      BS.writeFile outFile res
-
-
-processCommand _ _ Bad  = do
-               putStrLn "BAD command"
-               return ()
 
 pumpCommand :: Command -> IO ()
 pumpCommand command = N.withSocketsDo $ do 
